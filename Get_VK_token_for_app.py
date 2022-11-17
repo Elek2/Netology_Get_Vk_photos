@@ -4,7 +4,7 @@ base_url = 'https://oauth.vk.com/authorize?'
 params = {
 	'client_id': 51475199,
 	'display': 'page',
-	'scope': 'friends,photos,stories,offline',
+	'scope': 'friends,photos,stories,offline,messages',
 	'redirect_uri': 'https://oauth.vk.com/blank.html',
 	'response_type': 'token',
 	'v': '5.131',
