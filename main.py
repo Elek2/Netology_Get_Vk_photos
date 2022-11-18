@@ -1,6 +1,7 @@
 from datetime import datetime
 import requests
 import json
+from tqdm import tqdm
 import logging
 
 
@@ -20,28 +21,47 @@ class GetPhotos:
 			'Authorization': f'OAuth {self.ya_token}'
 		}
 
-	def _get_folder_name(self):
+		logging.basicConfig(
+			filename="logs.log",
+			level=logging.INFO,
+			format="%(asctime)s %(levelname)s %(message)s"
+		)
+
+	def _get_name(self):
 		end_url = 'users.get'
 		vk_params = {
 			'user_ids': self.vk_id,
 		}
 		url = self.base_VK_url + end_url
-		response = requests.get(url, params={**self.base_VK_params, **vk_params}).json()['response']
-		full_name = response[0]['first_name'] + '_' + response[0]['last_name']
-		return full_name
+		try:
+			response = requests.get(url, params={**self.base_VK_params, **vk_params}).json()['response']
+			full_name = response[0]['first_name'] + '_' + response[0]['last_name']
+			logging.info(f"Имя пользователя: {full_name}")
+			if full_name == 'DELETED_':
+				logging.error("Пользователь удален")
+			if not response[0]['can_access_closed']:
+				logging.error("Приватный пользователь. Доступ к фото запрещен")
+			return full_name
+		except IndexError:
+			logging.error("Имя пользователя не получено")
 
+	@property
 	def _get_vk_photos(self):
 		end_url = 'photos.get'
 		vk_params = {
 			'owner_id': self.vk_id,
 			'album_id': 'profile',
 			'extended': 1,
-			'count': 10,
+			'count': 1000,
 			'photo_sizes': 1
 		}
 		url = self.base_VK_url + end_url
-		response = requests.get(url, params={**self.base_VK_params, **vk_params}).json()['response']['items']
-		return response
+		try:
+			response = requests.get(url, params={**self.base_VK_params, **vk_params}).json()['response']['items']
+			logging.info("Получены фотографии пользователя")
+			return response
+		except TypeError:
+			logging.error("Фотографии не получены")
 
 	def _reformat_photos_list(self, photos_list):
 		colums = ['name', 'size_type', 'photo_url']
@@ -67,8 +87,13 @@ class GetPhotos:
 	def _create_folder_on_disk(self, folder_name="Фотографии с VK"):
 		end_url = 'resources'
 		url = self.base_Ya_url + end_url
-		requests.put(url, headers=self.Ya_headers, params={"path": folder_name})
-		return folder_name
+		try:
+			response = requests.put(url, headers=self.Ya_headers, params={"path": folder_name})
+			if response.status_code != 409:
+				logging.info(f"Папка \"{folder_name}\" на Яндекс.Диске создана")
+			return folder_name
+		except:
+			logging.error("Папка на Яндекс.Диске НЕ создана")
 
 	def _upload_to_disk(self, file_name, photo_url):
 		end_url = 'resources/upload'
@@ -78,16 +103,17 @@ class GetPhotos:
 		return response
 
 	def get_photos(self):
-		full_name = self._get_folder_name()
-		all_photos = self._get_vk_photos()
+		full_name = self._get_name()
+		all_photos = self._get_vk_photos
 		needed_photos = self._reformat_photos_list(all_photos)
 		base_folder_name = self._create_folder_on_disk()
 		folder_name = self._create_folder_on_disk(f'{base_folder_name}/{full_name}')
 
-		for photo in needed_photos:
+		for photo in tqdm(needed_photos, desc='Загружено фотографий'):
 			file_name = f'{folder_name}/{photo["name"]}'
 			photo_url = photo["photo_url"]
 			self._upload_to_disk(file_name, photo_url)
+		logging.info(f"Фотографии {len(needed_photos)} шт. загружены на Яндекс.Диск")
 
 		photo_json = [{"file_name": photo['name'], "size": photo['size_type']} for photo in needed_photos]
 		with open(f'{full_name}_photo.json', 'w', encoding='utf-8') as f:
@@ -97,10 +123,13 @@ class GetPhotos:
 
 
 if __name__ == '__main__':
-
 	VK_token = open('VK_token.txt', 'r').read()
 	Ya_token = open('Ya_token.txt', 'r').read()
 
 	photo_bot = GetPhotos(36140, Ya_token)
 	photo_bot.get_photos()
-	# logging.error('hi')
+
+# 5327 - private
+# 1243256126 - deleted
+# 1234569789578354 - нет
+# 36140 = я
